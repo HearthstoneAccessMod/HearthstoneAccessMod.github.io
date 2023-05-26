@@ -1,1 +1,1 @@
-# HearthstoneAccessMod.github.io
+# Welcome to the HearthstoneAccessMod landing page!
