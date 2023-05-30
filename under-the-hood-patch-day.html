@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en-US">
+	<body>
+		<h1>Hearthstone Access: Under the Hood - What happens when a new patch lands?</h1>
+
+		<p>Since <a href="https://www.reddit.com/r/hearthstone/comments/ozb3m9/introducing_hearthstone_access_an_accessibility/">Hearthstone Access was released</a> back in August 2021, many blind and visually impaired players have been able to enjoy the game for the first time and beat their (sighted) friends in their journey towards the mythical Legend Rank in <a href="https://hearthstone.blizzard.com/">Hearthstone</a>.</p>
+
+		<p>In order to make all of this possible and provide continuity over this past year and some change, Hearthstone Access has been released <a href="https://hearthstoneaccess.github.io/release-notes.html">41 times</a>.</p>
+
+		<p>This article is a glimpse into what has essentially become a "second job" of sorts - developing and maintaining a (proprietary) constantly evolving online game accessible for the blind and visually impaired as a lone developer.</p>
+
+		<p>This is not the story of how I wrote the initial 30000 lines of code nor the story of why I've designed the interface the way I did. It's also not a guide into how to do any of this (for Hearthstone or any other proprietary game).</p>
+
+		<p>This is the story of what goes on behind the scenes whenever Hearthstone is updated - and what my life looks like every other week.</p>
+
+		<p>While this is still a fairly extensive story (with a lot of technical aspects), I've done my best to keep things as easy to follow as possible for the main target audience: the common <q>not a computer scientist/software engineer kind of (blind and/or visually impaired) player.</q></p>
+
+		<p>Many players have been asking for something like this for a while now: I apologize for taking so long to getting to it, but life has been busy. I hope you enjoy the read and perhaps learn something along the way. Or, if nothing else, understand why it is that I often have to temporarily disable features and why I simply don't have the time to work on other games (no matter how cool that would be).</p>
+		
+<!-- 0 -->
+		<h2>Step 0 - Understanding what Hearthstone Access is</h2>
+
+		<h3>Patch vs. Mod</h3>
+		<p>Although Hearthstone Access is commonly referred to as a <em>mod</em>, the term <em>mod</em> often causes confusion among players due to the fact that Hearthstone doesn't support mods (in the same way a <a href="https://www.nexusmods.com/skyrim">Bethesda game</a> or <a href="https://www.curseforge.com/wow/addons">World of Warcraft</a> would, for example).</p>
+
+		<p>Most Hearthstone <em>mods</em> you'd be familiar with such as the popular <a href="https://hsreplay.net/downloads/">Hearthstone Deck Tracker</a> work by inspecting certain log files and creating overlays on top of the game window. While you can certainly think of these as mods (especially given that the log files have arguably become an API to some extent at this point), a more accurate way of thinking about them would perhaps be as <em>companion apps</em> which run alongside the game (and happen to know where certain things would appear in the game).</p>
+
+		<p>In contrast to these, Hearthstone Access doesn't inspect files, create overlays or interact via any sort of API. What it does instead is it changes the game itself, modifying whatever it needs to in order to do its job.</p>
+		
+		<p>In very simple terms, you can therefore essentially think of Hearthstone Access as an unofficial <strong>patch</strong> that when applied, adds accessibility to Hearthstone. And the only reason why it is able to do so in the absence of an API, is that for all intents and purposes, Hearthstone Access <em>is</em> Hearthstone - it just happens to be a slightly different (and accessible) version of it.</p>
+
+		<h3>How does this work exactly?</h3>
+		<p>Games are normally distributed in the form of executable files your computer understands and knows how to run. There's naturally exceptions to this such as configuration files and other assets (which more technically inclined players often directly tweak to do various things - from altering frame rates to doing as much as changing textures and make the game look differently).</p>
+		
+		<p>For the most part, however, you can think of a game - or any piece of software, really - as a (very large) set of instructions your computer understands and follows in order to provide you an interface you understand and can interact with. An important aspect of it being that your computer running Windows doesn't really use the same language for doing these sorts of things your Apple or Android device (or even your PlayStation!) would.</p>
+
+		<p>At the risk of massively oversimplifying things (again, in lieu of keeping things understandable for the "not a computer scientist/software engineer" kind of player), the way a Hearthstone patch comes to life is:
+		<ol>
+			<li>A team of developers (in this case, Blizzard's "Team 5" AKA the Hearthstone team) writes the source code for the game in a programming language they (and their engine) understands - the language in this particular case being mostly the <a href="https://learn.microsoft.com/en-us/dotnet/csharp/">C# programming language</a> (on top of the <a href="https://unity.com/">Unity game engine</a>)</li>
+			<li>Whenever a new version is ready to be released, everything is compiled and bundled together into a special folder containing the Unity-based <em>executable</em> (i.e. the <em>program</em> your computer understands) as well as any additional files and dependencies (such as assets, translations and shared <em>libraries of code</em> the game depends on). This is done once per platform</li>
+			<li>This new version is distributed out to players e.g. via the <a href="https://www.blizzard.com/en-us/apps/battle.net/desktop">Battle.net Desktop App</a> in the case of Windows which replaces the old files on your computer with the new ones whenever your game is updated</li>
+		</ol>
+
+		<p>Note that there's naturally a lot more that goes into a process like this. For one, Hearthstone is an online game, meaning the program you run in order to play it (i.e. the <strong> game client</strong>) is just one end of the problem. Most of the game logic actually runs on what is commonly referred to as a <em>server</em> all clients (such as your game) around the world communicate with. You can think of this <em>server</em> as essentially a separate codebase which gets compiled and distributed to a set of computers (AKA <em>servers</em>) only Blizzard have access to.</p>
+
+		<p>For the purpose of Hearthstone Access, however, the server-side is largely irrelevant as we're not trying to change the rules of the game nor create a separate game. We're just trying to tweak the client-side of things in order to play the same game (following the same rules) everyone else does - and perhaps more importantly, <strong>with</strong> everyone else.</p>
+		
+<!-- 1 -->
+		<h2>Step 1 - Decompiling Hearthstone</h2>
+		
+		<h3>Why this is needed and what it means</h3>
+
+		<p>If Hearthstone were open source, creating and maintaining an unofficial patch like Hearthstone Access would be a much simpler process as any developer would be able to compile the game from scratch and test things out. There would certainly still be a learning curve given how large the codebase is at this point, but at the end of the day, contributing to it wouldn't be any different than contributing to any other large project.</p>
+
+		<p>As pretty much any other commercial game, however, Hearthstone is not open source - and just to be clear, it wouldn't make any sense for it to be. I've often faced complaints from developers who seem to believe the (maintainability) issue with Hearthstone Access is that it isn't open source in the sense that you can't just fetch the code from somewhere (e.g. clone a GitHub repository) and run a command to compile everything.<p>
+
+		<p>As I've already said countless times, Hearthstone Access <em>is</em> open source and the source code for it (i.e. every single line of code it changes in a decompiled version of Hearthstone) is always <a href="https://github.com/HearthstoneAccess/HearthstoneAccess">made available on GitHub</a> at the exact moment a new version is released. It is, however, a patch on top of something which <em>isn't</em> open source - and I'm certainly not the one to ask for the original source code (hint: I don't have it either!) nor do I intend on ever publishing decompiled versions of a proprietary game online.</p>
+
+		<p>That being said, the first step behind any patch is to <strong>decompile</strong> Hearthstone i.e. convert a set of files our computer understands into a set of files <em>we</em> understand and can work with. Although the process for doing something like this greatly differs between games and technologies (which is out of scope for the purpose of this article), the only hard requirement is that whatever we come up with needs to be recompilable into its original format so our computer can understand it in the end (as it will be our computer running the game and not us).</p>
+
+		<p>In the case of Hearthstone (and the majority of games built using the Unity game engine out there) this process isn't too hard as the program itself (written in the language your computer understands) is actually interpreting a third (intermediate) language (distributed as part of the game in the form of DLL files) from which a decent approximation of the source code (in this case, in the C# programming language) can be extracted.</p>
+		
+		<p>There's aspects of it which are subject to human interpretation (meaning they require manual intervention), but for the most part, Hearthstone is a pretty good candidate for doing something like this - which is not to say you couldn't do with other games - it just means some would be harder than others.</p>
+
+		<p>In theory, however, anything can be patched (provided you understand the "computer language" your computer does and have an absurd amount of time available!) - it may just not be practical.</p>
+		
+		<h3>How I personally do this</h3>
+		
+		<p>Without delving into technical details, I've written a program which:<p>
+		<ol>
+			<li>Grabs my local game files (i.e. everything that would normally be under the Program Files\Hearthstone folder)</li>
+			<li>Extracts the version string (e.g. 24.0.3.147348) from one of these files</li>
+			<li>Decompiles the files containing the relevant files into a set of over 5000 files of code written in C#</li>
+			<li>Stores these files into a "special folder" named after the game version (i.e. a <em>git branch</em> for those of you familiar with git) in a format that is easy to work with (i.e. a <a href="https://visualstudio.microsoft.com/">Visual Studio</a> project)</li>
+			<li>Goes through all of these files, fixing anything which would normally need to be fixed manually in order to get the game to recompile</li>
+			<li>Recompiles Hearthstone from our generated project (i.e. go from the set of files we generated and fixed into the original files our computer understands in order to make sure everything still works)</li>
+		</ol>
+
+		<p>When step 6 above fails (which rarely happened in the past but quite often does since version 23.2.2.139522 for reasons that are way too technical to cover in this article), I need to jump in, interpret and fix whatever caused things to break.</p>
+
+		<p>Attentive readers may have noticed step 5 above is a bit paradoxical in that it mentions an automated process for fixing something which requires manual intervention. Without delving into a lot of technical details, the only important thing to note is that once I fix something by hand, I'm doing it for every version of Hearthstone from that point onwards (provided it doesn't change) and not just that specific version.</p>
+		
+		<p>Whenever step 6 fails, it normally means either something new which requires manual intervention popped up in step 5, or the entire distribution process changed to the point where my decompiling strategy no longer works.</p>
+
+<!-- 2 -->
+		<h2>Step 2 - Applying the patch</h2>
+		
+		<h3>What this git thing is and why it is important</h3>
+		
+		<p>On the decompile step I mentioned something called <em>git</em> and a couple of <em>special folders</em> and <em>git branches</em>. Without delving into details, those of you unfamiliar with <a href="https://git-scm.com/">git</a> may think of it as program developers often use to keep track of changes in any set of files. There's other (similar) systems with different implementations, flows and technicalities, but in a nutshell, they all target the same problem - version control.</p>
+		
+		<p>Imagine a friend of yours is writing a book and has asked you to review it - all 300 pages of it - and fix any wording or typos you come across. Now imagine that while you were away reading and editing those 300 pages, your friend decided to rewrite a few chapters to clarify some plot elements.</p>
+
+		<p>By the time you're done and proudly send your friend the 300 pages freshly edited by you, your friend thanks you - and later informs you the book has actually grown to 350 pages since then so it'd be great if you could review the new version and edit that instead. If you don't have a proper system in place, this is when you flip the table.</p>
+		
+		<h3>Why this is relevant for Hearthstone Access</h3>
+		
+		<p>Keeping Hearthstone Access up and running isn't too unlike this book writing and editing example. Except instead of a friend writing a book, you have dozens of developers (you don't even know) "writing" Hearthstone. And instead of 300 pages, you have thousands of files - each of these with up to thousands of lines of code.</p>
+
+		<p>Not to mention that every other week, there's a new revision. And your edits never actually make it back to your friend, so you can rest assured whatever version of the book you get, it'll have all the same typos you found one year ago (no matter how many times you've fixed them).</p>
+		
+		<p>The <a href="https://github.com/HearthstoneAccess/HearthstoneAccess/blob/24.2.2.149417/diff.patch">"diff.patch"</a> file on the Hearthstone Access GitHub repository - all 54561 lines of it - is the current (git) <em>"recipe"</em> that needs to be applied on top of Hearthstone to get Hearthstone Access. You can think of this as something along the lines of: <q>on page 327, replace the first word of the third line which reads <em>teh</em> with <em>the</em></q>; or <q>on page 1, rewrite the first phrase which reads <em>Welcome to my Tavern, friends</em> with <em>Welcome to my Accessible Tavern, friends</em>.</p>
+		
+		<p>If we go back to what we have from step 1 for a second then, we now have a set of files with source code (in a format we can work with) for this new version of Hearthstone - let's call it <b>version B</b>.</p>
+
+		<p>What we don't have is the <em>"recipe"</em> (i.e. the "diff.patch" file git understands) for converting version B of Hearthstone into version B of Hearthstone Access. We do have, however, the "recipe" for the previous version of Hearthstone - let's call it <b>version A</b> - and we know it worked back then since that's the one we used two weeks ago.</p>
+
+		<p>As a first step, we can therefore try to apply the recipe for version A on top of version B and see if it works. If we're lucky, it might. In over 99% of the cases though, it probably won't.</p>
+		
+<!-- 3 -->
+		<h2>Step 3 - Fixing the recipe</h2>
+		
+		<p>This is where our bulk of the work really starts. Just so we don't get lost, here's what we've done so far:</p>
+		<ul>
+			<li>Decompiled version B of Hearthstone into source code in a format we can work with</li>
+			<li>Applied the old Hearthstone Access recipe (which worked for the source code of the decompiled version A) on top of the source code for version B</li>
+		</ul>
+
+		<p>Unless this was a very insignificant release (think fixing some minor bugs or adjusting a few cards), git is now telling us it tried to apply the recipe but it found a bunch of conflicts and needs our help. The problem is that while recipe A was great for version A, some things have changed in version B and the recipe doesn't quite work anymore.</p>
+		
+		<h3>What a conflict means</h3>
+		
+		<p>Let's take the sample recipe from the previous section as an example. One of the lines said: <q>on page 1, rewrite the first phrase which reads <em>Welcome to my Tavern, friends</em> with <em>Welcome to my Accessible Tavern, friends</em></q>. Now, imagine version B introduced some changes so the first phrase on page 1 now reads as <em>Welcome to Hearthstone</em> instead. The recipe would now fail as it were expecting a certain phrase to be on page 1 - which doesn't exist anymore.</p>
+
+		<p>Git will point this out (unsure of what to do) so we can have a look at it and update our recipe: for example, to something like <q>on page 1, rewrite the first phrase which reads <em>Welcome to Hearthstone</em> with <em>Welcome to Hearthstone Access</em></q>.</p>
+
+		<p>The above example is naturally an extremely simplified version of what actually happens when you're dealing with millions of lines of source code across thousands of files instead of text in a book - which normally contains perhaps a few dozen chapters across a few hundred pages.</p>
+
+		<p>In any case, a conflict normally means some code Hearthstone Access depended on changed so it now needs to be reimplemented. This doesn't mean, however, that conflicts only arise when something in the interface changes - nor does it mean that code changes always cause interface changes.</p>
+		
+		<p>Most players normally assume that whenever the patch notes don't mention any UI changes, patching Hearthstone Access will be straightforward. It's worth noting this is not true at all. In fact, the worst patches to get through this past year had nothing to do with UI changes or new pieces of functionality.</p>
+		
+		<h3>Why conflicts happen so often</h3>
+		
+		<p>Imagine Hearthstone were a car instead of a game. As with most cars, the interface for driving it would likely consist in a set of pedals and a steering wheel. Now, imagine that in this example, Hearthstone Access were a mod on top of this Hearthstone car for enabling people with motor impairments to drive it without having to use the pedals nor the steering wheel: say, by using voice controls.</p>
+		
+		<p>One way to do it would be to create some sort of device capable of interpreting voice controls and operate the steering wheel and pedals mechanically. Think of a pair of mechanical hands permanently attached to the steering wheel and a pair of mechanical feet permanently attached to the padals - all of those connected to the device on the dashboard. In this example, the mod should work for as long the steering wheel and pedals stay the same (which in the case of a car, they likely would).</p>
+		
+		<p>A different way to do it would be to simply remove the pedals and the steering wheel and have the device communicate with the drivetrain, engine and everything else that's under the hood directly - perhaps making it so you could magically spawn the steering wheel and pedals back into the car at the push of a special button (named "F8") should anyone else want to drive it. In this example, the mod should work for as long as the internals of the car stay the same (which again, in the case of a car, they likely would).</p>
+
+		<p>As you've probably guessed, the latter approach is how Hearthstone Access does it.</p>
+		
+		<h3>The problem of constantly evolving games</h3>
+		
+		<p>Unlike cars and most physical products, Hearthstone is constantly evolving and sooner or later everything changes. The user interface is normally fairly stable, but it is still reworked from time to time - normally to do things like making existing journeys more intuitive and appealing or to add new game modes and functionality.</p>
+		
+		<p>The internal <em>"engine"</em>, however, is constantly changing. The reason why players don't normally notice these changes (apart from bugs) is that the interface layer (i.e. the code for the steering wheel and pedals which interacts with the engine) is constantly adapting to these changes i.e. the game developers are constantly <em>refactoring</em> the code to ensure everything keeps working.</p>
+
+		<p>Hearthstone Access is no different: every time the internals change (which happens pretty much every single patch apart from hotfixes), I need to understand what changed, why it changed and rework things in a way the game still works.</p>
+		
+		<p>Attentive readers may be wondering: <q>Why didn't you just do option 1 then? Why go through all the trouble to do option 2?</q>
+		
+		<h3>Why I chose Option 2</h3>
+		
+		<p>Option 1 is certainly possible and likely what I would do if I were to ever implement accessibility natively in a game. If nothing else, because it's by far the simplest way to do it and the easiest to maintain.</p>
+
+		<p>There is, however, a pretty big difference between driving a car using an interface that has you shouting <q>rotate the steering wheel counter-clockwise by 27 degrees</q> (repeating the same thing for 26, 25, 24, all the way to 0 until it straightens) and an interface where all you have to say is <q>slight left.</q></p>
+
+		<p>One of my goals with Hearthstone Access was to provide blind and visually impaired players with a native-like experience for playing a game - not playing a game of <q>jumping through hoops</q> (i.e. working around the visual interface) on top of the actual game. If it weren't for this decision, I'm not sure there would be so many nonsighted legend players as there are today.</p>
+		
+<!-- 4 -->
+		<h2>Step 4 - Testing things out</h2>
+		
+		<p>Just to recap, we now have:</p>
+		<ul>
+			<li>Decompiled the new version B of Hearthstone into source code</li>
+			<li>Applied the previous Hearthstone Access recipe for version A of Hearthstone to this new version B</li>
+			<li>Fixed all conflicts, creating a new Hearthstone Access recipe for version B of Hearthstone</li>
+			<li>Recompiled the game back with all the changes in it</li>
+		</ul>
+		
+		<p>At this point, if everything went well, we should hear the familiar <em>"Loading game"</em> phrase just as we open Hearthstone, followed by <em>"Main Menu. Play Ranked 1 of 11"</em> just as the Hearthstone music kicks in.
+		
+		<p>Or perhaps a <em>"Popup. These cards have changed."</em> Or maybe <em>"Daily Quests."</em> Or <em>"You forgot some rewards."</em> Or <em>"The current season has ended."</em>
+
+		<p>Actually, now that I think of it, maybe we're a new player who hasn't even reached the main menu yet. In which case we should certainly hear <em>"Welcome to Hearthstone. I'll be teaching you how to play through a set of six tutorial games."</em></p>
+
+		<p>Unless we've already started playing through the tutorial yesterday - until we had to stop as it was getting late and we had to turn in. In which case we may hear <em>"Welcome back to the tutorial. You've defeated Hemet Nesingwary. Your next and final opponent is Illidan Stormrage."</em></p>
+		
+		<h3>Why testing matters</h3>
+		
+		<p>During all the time you've been playing Hearthstone, you've likely been exposed and interacted with thousands of pop ups and dozens of menus to do various things - from building decks to buying and opening card packs. You may not care about most of these today (perhaps because you only play Battlegrounds nowadays), but someone else does - much in the same way you did back then.</p>
+
+		<p>Different players are exposed to different elements of the game depending on how far along they are in their Hearthstone journey and what they're interested in. I have to make sure Hearthstone Access keeps working for all of them - regardless of whether you're primarily a Battlegrounds player or someone who really only cares about Book of Heroes.</p>
+		
+		<p>Hearthstone has thousands of journeys: from pop ups you may need to interact with in different ways, such as claiming your free deck once you're out of the Apprentice League, reading about card nerfs and buffs or just acknowleging you've been given a free card back - not to mention complex screens such as the collection manager or the even more complex game itself (you know, the thing we're here for), including the dozens of hotkeys you use without even thinking about them (in the same way I've not once looked at my keyboard while writing this entire thing).</p>
+		
+		<p>Just because a particular pop up or screen worked in the previous version of Hearthstone Access, that doesn't mean it will still work in the new version. We may have (syntactically) fixed the conflicts in step 3 and updated our recipe to the point the game back is back up, but just because the book is "readable" again, that doesn't mean the sentences - or chapters - still make sense.</p>
+		
+		<p>It's not uncommon for entire journeys which were accessible to completely break when a new patch lands - even if it doesn't bring UI changes. Sometimes this may be because some details in the internals don't quite operate the same way anymore and some bits of logic caused the interface to break. Other times, this may even be because whatever changed actually introduced new bugs in the game itself - and we may have to fix them before Blizzard notice it if it ends up being something Hearthstone Access depends upon.</p>
+		
+		<h3>How I test things</h3>
+		
+		<p>Testing everything manually with multiple accounts would be absolutely infeasible for me to do. Not only would it take me dozens of hours of mindless clicking and validating things every time a patch lands, it would also be quite susceptible to human error - such as falling asleep in the middle of a 10 hours testing session or not even noticing something wasn't working as expected.</p>
+		
+		<p>Not to mention that were I to find any bugs, I'd have to repeat the entire process again once the bugs were fixed (as fixing bugs may always introduce other bugs).</p>
+		
+		<p>Computers are much better at doing these sorts of repetitive tasks: not only can you be sure they'll always repeat the same exact process (provided you've done things right), they'll also do it much faster since unlike me, they can quite easily understand text being spoken at a million times of words per second - and interact with it without even doing so much as blinking an eye.</p>
+
+		<p>Now, even simple user journeys such as pop ups are still quite heavy in terms of animations that you have to wait for before they can be interacted with, so even a computer has to e.g. wait for a card pack to open and the cards to be revealed before interacting with them. Regardless of that, a computer can quite easily turn what would be an error prone 10 or 20 hours ordeal into 1 hour.</p>
+		
+		<h3>The magic testing program</h3>
+		
+		<p>Without delving into technical details, most testing is done through a separate testing program I originally wrote and continuously update. Every time I make something accessible, I always add a bunch of new tests to it for validating whatever it was I made accessible works.</p>
+
+		<p>The goal of this is not only to validate a certain feature and all the edge cases around it work, but more importantly to make sure the feature will keep working when a new patch lands.</p>
+
+		<p>Or rather, to inform me when something stops working: at which point I either fix it, ignore it or disable it temporarily depending on how crucial it is for the majority of players and how long fixing it would take me (which can range from a couple of minutes to a couple of weeks).</p>
+
+		<p>Such as the spectate journey people keep asking me about. Yes, I'm well aware it's broken.</p>
+		
+		<p>At the time of writing, this "testing program" is about 10000 lines of code long and covers most journeys I've made accessible during this past year. Some of the tests would include:</p>
+		<ul>
+			<li>Game menu AKA the options menu</li>
+			<li>The hotkeys for accessing screens and modes while in the main menu</li>
+			<li>Choose adventure menu</li>
+			<li>Practice mode - from starting a game against a bot to selecting a deck, knowing about which opponents you've yet to defeat - to telling you expert mode is locked if you haven't beaten normal yet</li>
+			<li>Book of Heroes - from starting a chapter, to reading the deck before the game, to retiring from it</li>
+			<li>Browsing the Collection Manager - not just cards, but hero skins, coins, etc. From reading all the effects to tabbing between classes, using the Home/End/PageUp/PageDown keys, etc.</li>
+			<li>Creating decks using a template</li>
+			<li>Creating custom decks</li>
+			<li>Editing decks</li>
+			<li>Creating decks from the clipboard when someone shared a deck with you</li>
+			<li>Making sure the mana filters and the search boxes work in all of these screens which require you to browse through your collection</li>
+			<li>Creating non standard decks</li>
+			<li>Crafting and disenchanting cards - from actually doing it to telling you can't do it because you already have 2 copies, or because you don't have enough dust, or some other reason</li>
+			<li>Every single pop up - from quests popping up when you log in, to the reconnect dialog when your connection drops, to nerfs, new season intro dialogs, generic alert pop ups, quest progress notifications, quest completion pop ups and their rewards, season end dialogs, generic banners, ranked rewards, unclaimed rewards, track rewards, etc. There's way too many to describe here but you get the point</li>
+			<li>End of game experience - from telling you how much XP you got to whether you've advanced in your Rewards Track - to telling you how far away you are from gaining something such as a card back</li>
+			<li>Rank changes when a game ends - from telling you how much star bonus and points you got to whether there were any rank changes - regardless of whether you're still in the apprentice league or have already reached legend</li>
+			<li>Main menu - including all the standard keys such as arrow keys, Home/End, Tab, F1, etc.</li>
+			<li>Opening and browsing packs - from standard packs, to wild packs, to packs you can't even open yet if you haven't finished apprenticeship - to opening the actual packs, browsing the cards, seeing what class they belong to, etc.</li>
+			<li>Making sure adjusting the game speed when playing against AI still works</li>
+			<li>Social-related notifications such as when your friends log in or send you messages in-game</li>
+			<li>Social panel - from adding and removing friends to chatting with them, challenging them and knowing what rank they are and whether they're playing something at the moment or not</li>
+			<li>Friendly challenges - from picking decks and starting the game to borrowing decks from your friend or lending them some they can play with</li>
+			<li>Ranked mode - from deck selection to reading your current rank in ranked modes - including casual games and other formats such as wild and classic</li>
+			<li>Journal - from reading your quests and what their rewards are to rerolling them, abandoning them - as well as claim any unclaimed track rewards and finding about your current level</li>
+			<li>Battlegrounds menu - from starting a new game to reading your stats or playing through the tutorial one more time</li>
+			<li>Shop - from browsing through every item you can buy with in-game gold to reading all the cards in a mini-set you may be interested in and actually buying something</li>
+			<li>Making sure all the translations Hearthstone Access depends on still exist (as some piece of text may be removed from Hearthstone due to it no longer being necessary in the actual game regardless of whether we're using it or not)</li>
+			<li>Making sure all cards which target something are accounted for and correctly marked as something that would likely be used against an enemy target or friendly target (think "Fireball" selecting enemy minions first when you press "Tab" and "Lesser Heal" selecting your Hero first)</li>
+			<li>Making sure all Battlegrounds cards with permanent effects are accounted for so they can be narrated during the combat phase - this is so we can ignore random buffs/debuffs which really aren't that important to be called out as they would just be spammy and not last anyways (think "Avenge" cards giving "Poisonous" to a minion or "Tarecgosa" getting a Divine Shield)</li>
+		</ul>
+		
+		<p>This list is by no means exhaustive (and it certainly doesn't cover all the edge cases these tests actually do cover), but it should serve as a clear indicator of how much work happens behind the scenes before something even gets implemented.</p>
+		
+		<p>As for the reason why this particular program isn't open source: it only exists for testing purposes and is of little value without accessing a couple of accounts I created and use for testing purposes - which I naturally don't intend to publicly share.</p>
+		
+		<h3>What the testing program doesn't do</h3>
+		
+		<p>The one thing I don't have tests for is the actual game itself - the reason being that it'd be extremely complex to design an in-game test without access to a test environment (which I don't have) as unlike everything else, faking an entire game is a lot harder to do than e.g. faking a rank change from diamond to legend (regardless of whether my account is in fact diamond rank 1 at the moment or not).</p>
+		
+		<p>It's worth noting the game itself is by far the thing that changes the least though, and that I've written Hearthstone Access in a way that makes it so I'll normally know things changed after applying step 2.</p>
+
+		<p>The way I do this is well beyond the scope of this article (and not something that can be taught as it is a very intuitive process that only comes with a lot of experience programming as well as an understanding of the codebase you're working on itself), but you can think of it as me rewriting perfectly fine phrases in a book with the exact same phrase. Except instead of using a regular period, I use a character which looks and behaves exactly like a period - the point being that while we won't know the difference, git will (and it will warn me someone has touched that particular phrase).</p>
+
+		<p>As for why this matters, the easiest way to think about it is that some phrases and chapters are more important than others - and the general plot of the book heavily depends on them being there.</p>
+		
+<!-- 5 -->
+		<h2>Step 5 - Fixing things</h2>
+		<p>Having run the magical test program that lets me sleep at night every day right after a release, we now have a list of things that need fixing fixing.</p>
+
+		<p>While this article doesn't cover implementing new features (i.e. making new UIs and game modes accessible), it's worth noting the process for implementing something new is pretty similar to fixing something - the only difference being that when implementing something new I always have to implement the tests and add any new translations that might be needed (including asking the <a href="https://hearthstoneaccess.github.io/credits.html#translation">awesome community of translators</a> supporting 12 different languages in total), whereas when I'm fixing something all of this is already in place.</p>
+		
+		<p>Once we have the entire codebase (i.e. the source code after the Hearthstone Access "recipe" has been successfully applied on top of Hearthstone itself), implementing something new (or fixing something) in it really isn't any different from implementing something new in any other project. It may be a bit trickier as decompiled code is not as pretty as the actual source code - which means no comments from fellow developers and a lot of <em>"magic numbers"</em> in places where it'd be really useful to know what 14256 is and why it is so special.</p>
+
+		<p>For the most part, however, it really is just a matter of reading the code, understanding what it does and how it works (perhaps <em>"printing"</em> i.e. writing to a file some debug info here and there) and adjusting things.</p>
+		
+		<p>Having said that, working on a constatly evolving codebase you have no control, ownership (or even visibility on) as if it were a normal project would be a recipe for disaster. As such, I always make sure I follow the following principles:</p>
+		<ol>
+			<li>Try to change as little code from Hearthstone as possible. In most cases, refactoring the original codebase of Hearthstone would be the right way to add accessibility to it. However, maintaining a patch on top of a refactor would be an absolute nightmare (just think of all the conflicts!) Instead, try to write all the accessibility-related code away in its own set of <em>"functions"</em> and bridge as little as possible with the original codebase</li>
+			<li>Make sure I have a way of faking whatever it is I'm working on locally so I can properly cover it with tests afterwards. This means faking everything from cards to coins, gold, arcane dust, to full interactions such as opening packs which don't even exist (in the sense that I don't have them) and make sure they always contain the same set of cards</li>
+			<li>Extract any code I directly depend on which may not be factored out into a <em>"function"</em> into something I control (effectively making Hearthstone depend on something owned by the Hearthstone Access codebase and not the other way around). Think about a developer quickly writing a few lines of code somewhere to know whether you've unlocked all classes or not and using that to enable/disable the <em>"practice against expert"</em> button. If we depend on that, those lines of code will be extracted into a common <em>"have I unlocked expert?"</em> function (in programming lingo) owned by Hearthstone Access which Hearthstone will then depend on - the point being that git will let us know (i.e. trigger a conflict) if someone decides to change the original code (and e.g. make it so expert is now unlocked after you've unlocked half the classes instead of all of them)</li>
+			<li>Leave "markers" in the actual code in places you really want to know about should they have any changes. Think of a new card type (such as a Battlegrounds Hero Buddy) or some common piece of functionality that is used in 3 different places today but could very well be used in 4 tomorrow (and you better know about it if it does!)</li>
+		</ol>
+		
+		<p>Once everything is done, all that's left to do is go back to step 4 and rerun all the tests - even the ones that were passing - to make sure we haven't broken something else while fixing whatever it is we were fixing in the first place. If we did end up breaking something else, we'll have to go through steps 4 and 5 again (and as many times as needed) until step 4 says everything looks ok. Once we get the green light, we're ready to release!</p>
+		
+<!-- 6 -->
+		<h2>Step 6 - Releasing the new version</h2>
+		<p>This last step is by far the easiest. Not necessarily because the process of distributing things out is particularly simple, but because most of the variables are entirely controlled by me - which means everything is pretty much automated.</p>
+
+		<p>There's a couple of manual steps involved such as updating the release notes with any new pieces of functionality I may have added and/or any known issues - as well as including any new translations (and/or translation fixes) submitted by members of the community since the previous version of the game.</p>
+		
+		<p>For the most part, however, releasing a new version of Hearthstone Access nowadays is pretty much clicking a button (i.e. executing a special "release program" I wrote).</p>
+		
+		<p>Without delving into details, what this program does is essentially:</p>
+		<ol>
+			<li>Validate that what we're attempting to release is indeed a new version of Hearthstone Access and all the versions are correct</li>
+			<li>Create the relevant git branches and validates everything is as it should be</li>
+			<li>Build the "release bundle" which contains the new (compiled) version of Hearthstone Access as well as any dependencies, translations and speeches in the right folder structure</li>
+			<li>Build the <a href="https://github.com/HearthstoneAccess/HearthstoneAccess/blob/24.2.2.149417/diff.patch">"diff.patch"</a> file (i.e. the Hearthstone Access "recipe" for this particular version of Hearthstone) by comparing the differences between the base game and the patched game</li>
+			<li>Push everything into the <a href="https://github.com/HearthstoneAccess/HearthstoneAccess">Hearthstone Access repository on GitHub</a>, tagging the new version with whatever version of Hearthstone it corresponds to</li>
+			<li>Upload the "release bundle" (i.e. the set of files) onto the <a href="https://github.com/HearthstoneAccess/HearthstoneAccess/releases">releases section on the GitHub repository</a> for players who would rather download the files and copy them themselves manually</li>
+			<li>Push the release notes onto the <a href="https://hearthstoneaccess.github.io/release-notes.html">release notes section</a></li>
+			<li>Validate everything is working as expected i.e. that the automatic patcher works, the files are all there and the release notes have been published</li>
+			<li>Optionally communicate the new release happened - meaning <a href="https://twitter.com/guide_dev">twitter</a>, <a href="https://discord.com/invite/WZWRenbuRe">Discord</a> and the <a href="https://forum.audiogames.net/topic/41748/hearthstone-access/">audiogames forum</a></li>
+		</ol>
+
+		<p>Once all of this is done, the <a href="https://github.com/HearthstoneAccess/Patcher">automatic patcher</a> most players use will know a new version has been released - something it does by scanning the Hearthstone Access repository on GitHub for a <a href="https://github.com/HearthstoneAccess/HearthstoneAccess/blob/24.2.2.149417/hsa-version">new version</a>.</p>
+
+		<h3>Patching the game</h3>
+
+		<p>When you use the automatic patcher and click "update", it simply fetches a <a href="https://github.com/HearthstoneAccess/HearthstoneAccess/blob/24.2.2.149417/patch.zip">compressed ZIP folder from the same repository</a> containing all the files that need to be patched and extracts them into your local Hearthstone folder, overriding the original ones with the (patched) accessible ones.</p>
+
+		<p>Players who don't use the automatic patcher do the download and extracting steps above manually. The patcher is simply a utility program which is sure to always grab the correct set of files for your Hearthstone version and which knows where your Hearthstone folder is in your computer so you don't have to worry about any of it (or know much about how computers work in order to play the game - which is a big deal for a lot of players).</p>
+		<p>When players patch the game manually right after an official patch lands, what they're essentially doing is rolling back part of their game client into an older version of the game - which may or may not work depending on what else has changed and on which parts of the game you interact with. This effectively means skipping a patch the game may work without such as a minor patch mostly containing bug fixes - which is often ok as a temporary measure while I work on the new version even if it is a "do at your own risk thing".</p>
+
+		<h2>The End - Bringing it all together</h2>
+
+		<p>Players are often confused by why it is that keeping Hearthstone Access up and running requires so much effort. While most players seem to understand the initial 1000 hours of effort writing tens of thousands of lines of code across 7 different programs, very few understand the work involved in this other side of it.</p>
+
+		<p>Now that we know what the steps are and what is involved in each one of them, we can try to put some timings into it.</p>
+
+		<p><b>Steps 1 and 2</b> i.e. decompiling the game and applying the previous recipe normally take somewhere between 10 minutes and 2 hours depending on the patch. Unless something drastically changed, <a href="https://hearthstoneaccess.github.io/status-update-18-05-2022.html">such as what happened back in version 23.2.0</a> - where these 2 steps alone ended up taking about 20 hours.</li>
+
+		<p><b>Step 3</b> i.e. fixing the recipe normally takes somewhere between no time at all (in the case of very minor patches and bugfixes) to about 5 hours for more complex ones. On average, I'd say 1 to 2 hours feels about right for most patches.</p>
+
+		<p><b>Step 4</b> i.e. the testing program takes about 1 hour to run these days. I often do have to run it more than once depending on whether it found any bugs or not, but most of it is idle time for me as my computer is the one doing the work.</p>
+
+		<p><b>Step 5</b> i.e. fixing things is by far the hardest step and heavily dependent on what the new patch brings. If nothing broke during step 4 (as with very minor patches and hotfixes), this step isn't even needed. However, if something did break (and it normally does), this step will always take at least a few hours - up to a few weeks or even months depending on what broke.</p>
+
+		<p>If something complex such as the collection manager or the game itself were to be redesigned, step 5 would take so long to get through that Hearthstone Access would likely be out for a few months (unless I took a sabbatical to bring it back up which is unlikely to ever happen).</p>
+
+		<p><b>Step 6</b> i.e. the actual release takes about 5 minutes to do - this step being what most players often assume is the entirety of the work I have to do on patch day (I wish!).</p>
+
+		<p>As for when these steps happen: since the <a href="https://hearthstoneaccess.github.io/status-update-18-05-2022.html">(not so good) episode with 23.2.0</a>, the Hearthstone team have (through <a href="https://twitter.com/Celestalon">the Hearthstone Features Design Lead</a>) been sending me builds ahead of time so I can normally knock steps 1, 2 and 3 out of the way over the weekend before a patch lands (typically on a Tuesday).</p>
+
+		<p>For as long as this holds, this means that for most patches, steps 4, 5 and 6 (as well as my actual job and family responsibilities!) are the ones holding the release out - and they can only start after the patch is out and once I can find some free time.</p>
+
+		<p>In any case, once we've gone through all of this, the well known status of <em>Playing Hearthstone</em> spreads through all the players on Discord. Our job is done: Hearthstone Access is up and running.</p>
+	</body>
+</html>
